@@ -1,3 +1,5 @@
+> **RTSIm experimental prototype:** This branch contains the native RTSIm device and related controller/emission changes. See [the RTSIm guide](README_RTSIM.md) for configuration and source locations.
+
 <a href="https://sumo.dlr.de/docs"><p align="center"><img width=50% src="https://raw.githubusercontent.com/eclipse/sumo/main/docs/web/docs/images/sumo-logo.svg"></p></a>
 
 Eclipse SUMO - Simulation of Urban MObility
