@@ -9,6 +9,9 @@
 #include <map>
 #include <limits>
 #include <memory>
+#include <algorithm>
+#include <set>
+#include <sstream>
 #include <utils/common/StringUtils.h>
 #include <utils/common/RandHelper.h>
 #include <utils/common/WrappingCommand.h>
@@ -29,6 +32,19 @@
 
 namespace {
 std::map<std::string, std::shared_ptr<RTSIm::CFDTable> > tables;
+// Immutable scenario identities, retained after departures/arrivals. No vehicle
+// pointers are stored here; cleanup resets the registry between simulations.
+std::map<std::string, std::vector<std::string> > platoons;
+std::map<std::string, std::string> memberPlatoons;
+
+std::string joinedMembers(const std::vector<std::string>& members) {
+    std::string result;
+    for (const std::string& member : members) {
+        if (!result.empty()) { result += " "; }
+        result += member;
+    }
+    return result;
+}
 
 std::string parameter(const SUMOVehicle& v, const std::string& key, const std::string& def = "") {
     const std::string name = "device.rtsim." + key;
@@ -87,7 +103,11 @@ void MSDevice_RTSIm::buildVehicleDevices(SUMOVehicle& v, std::vector<MSVehicleDe
     }
 }
 
-void MSDevice_RTSIm::cleanup() { tables.clear(); }
+void MSDevice_RTSIm::cleanup() {
+    tables.clear();
+    platoons.clear();
+    memberPlatoons.clear();
+}
 
 MSDevice_RTSIm::MSDevice_RTSIm(SUMOVehicle& holder) : MSVehicleDevice(holder, "rtsim_" + holder.getID()) {
     MSVehicle* micro = dynamic_cast<MSVehicle*>(&holder);
@@ -128,6 +148,56 @@ MSDevice_RTSIm::MSDevice_RTSIm(SUMOVehicle& holder) : MSVehicleDevice(holder, "r
     }
     myLeaderID = parameter(holder, "leader");
     myFrontID = parameter(holder, "front");
+    const std::string sizeText = parameter(holder, "platoon-size");
+    const std::string positionText = parameter(holder, "position");
+    mySize = integer(sizeText.empty() ? "1" : sizeText, "platoon-size");
+    myPosition = integer(positionText.empty() ? "1" : positionText, "position");
+    myPlatoonID = parameter(holder, "platoon-id");
+    const std::string membersText = parameter(holder, "members");
+    if (myPlatoonID.empty() != membersText.empty()) {
+        throw InvalidArgument("RTSIm platoon-id and members must be specified together");
+    }
+    if (!myPlatoonID.empty()) {
+        if (myPlatoonID.find_first_of(" \t\r\n\f\v") != std::string::npos) {
+            throw InvalidArgument("RTSIm platoon-id must not contain whitespace");
+        }
+        std::istringstream members(membersText);
+        std::string member;
+        std::set<std::string> unique;
+        while (members >> member) {
+            if (!unique.insert(member).second) {
+                throw InvalidArgument("RTSIm members contains duplicate vehicle '" + member + "'");
+            }
+            myMembers.push_back(member);
+        }
+        const auto self = std::find(myMembers.begin(), myMembers.end(), holder.getID());
+        if (self == myMembers.end()) { throw InvalidArgument("RTSIm members must include this vehicle"); }
+        const int size = (int)myMembers.size();
+        const int position = (int)std::distance(myMembers.begin(), self) + 1;
+        const std::string leader = myMembers.front();
+        const std::string front = position == 1 ? "" : myMembers[position - 2];
+        if ((!sizeText.empty() && mySize != size) || (!positionText.empty() && myPosition != position)
+                || (!myLeaderID.empty() && myLeaderID != leader) || (!myFrontID.empty() && myFrontID != front)) {
+            throw InvalidArgument("RTSIm leader/front/position/platoon-size conflicts with ordered members");
+        }
+        mySize = size;
+        myPosition = position;
+        myLeaderID = leader;
+        myFrontID = front;
+        const auto group = platoons.find(myPlatoonID);
+        if (group != platoons.end() && group->second != myMembers) {
+            throw InvalidArgument("RTSIm members must be identical and ordered consistently for platoon '" + myPlatoonID + "'");
+        }
+        for (const std::string& id : myMembers) {
+            const auto assigned = memberPlatoons.find(id);
+            if (assigned != memberPlatoons.end() && assigned->second != myPlatoonID) {
+                throw InvalidArgument("RTSIm vehicle '" + id + "' is already assigned to platoon '" + assigned->second + "'");
+            }
+        }
+        // The designated leader has no upstream platoon data. Its identity is
+        // still retained if a cooperative controller was requested for all members.
+        if (position == 1) { myCooperative = false; }
+    }
     if (myCooperative) {
         validatePeerID(myLeaderID, "leader", holder.getID());
         validatePeerID(myFrontID, "front", holder.getID());
@@ -143,7 +213,7 @@ MSDevice_RTSIm::MSDevice_RTSIm(SUMOVehicle& holder) : MSVehicleDevice(holder, "r
         // Peers may be loaded or inserted later; known incompatible peers fail now.
         cooperativePeer(myLeaderID);
         cooperativePeer(myFrontID);
-    } else if (!myLeaderID.empty() || !myFrontID.empty()) {
+    } else if (myPlatoonID.empty() && (!myLeaderID.empty() || !myFrontID.empty())) {
         throw InvalidArgument("RTSIm leader/front require carFollowModel=CC and controller=CACC or PLOEG");
     }
     const std::string spacingText = parameter(holder, "cacc-spacing");
@@ -155,6 +225,9 @@ MSDevice_RTSIm::MSDevice_RTSIm(SUMOVehicle& holder) : MSVehicleDevice(holder, "r
         throw InvalidArgument("RTSIm cacc-spacing requires carFollowModel=CC and controller=CACC");
     }
     const std::string sigmaStepText = parameter(holder, "sigma-step");
+    if (cf == SUMO_TAG_CF_KRAUSS && !sigmaStepText.empty()) {
+        throw InvalidArgument("RTSIm device.rtsim.sigma-step is unsupported for Krauss; use the native vType sigmaStep attribute");
+    }
     const double sigmaStepSeconds = number(sigmaStepText.empty() ? toString(TS, 17) : sigmaStepText, "sigma-step");
     if (sigmaStepSeconds <= 0.) { throw InvalidArgument("RTSIm sigma-step must be positive"); }
     const bool configureSigmaStep = !sigmaStepText.empty() || (mySigma >= 0. && (cf == SUMO_TAG_CF_ACC || cf == SUMO_TAG_CF_CACC || myPlexe));
@@ -183,8 +256,6 @@ MSDevice_RTSIm::MSDevice_RTSIm(SUMOVehicle& holder) : MSVehicleDevice(holder, "r
     myModel = parameter(holder, "model");
     myBound = parameter(holder, "cd-bound", "lower");
     if (myBound != "lower" && myBound != "upper") { throw InvalidArgument("RTSIm cd-bound must be lower or upper"); }
-    mySize = integer(parameter(holder, "platoon-size", "1"), "platoon-size");
-    myPosition = integer(parameter(holder, "position", "1"), "position");
     myGap = number(parameter(holder, "gap", "0"), "gap");
     if (mySize < 1 || myPosition < 1 || myPosition > mySize || myGap < 0.) { throw InvalidArgument("RTSIm invalid platoon size, position, or gap"); }
     if (!myModel.empty()) {
@@ -234,11 +305,24 @@ MSDevice_RTSIm::MSDevice_RTSIm(SUMOVehicle& holder) : MSVehicleDevice(holder, "r
     if (myFr0 >= 0.) { holder.getEmissionParameters()->setRollDragCoefficient(myFr0); }
     // Schedule last: construction/parameter exceptions cannot leave a callback
     // pointing at a device whose constructor did not finish.
-    if (myCooperative) {
-        std::unique_ptr<WrappingCommand<MSDevice_RTSIm> > command(
-            new WrappingCommand<MSDevice_RTSIm>(this, &MSDevice_RTSIm::updateCooperativeTopology));
-        MSNet::getInstance()->getBeginOfTimestepEvents()->addEvent(command.get(), SIMSTEP + DELTA_T);
-        myTopologyCommand = command.release();
+    const bool newPlatoon = !myPlatoonID.empty() && platoons.count(myPlatoonID) == 0;
+    if (newPlatoon) {
+        platoons[myPlatoonID] = myMembers;
+        for (const std::string& id : myMembers) { memberPlatoons[id] = myPlatoonID; }
+    }
+    try {
+        if (myCooperative || !myPlatoonID.empty()) {
+            std::unique_ptr<WrappingCommand<MSDevice_RTSIm> > command(
+                new WrappingCommand<MSDevice_RTSIm>(this, &MSDevice_RTSIm::updateCooperativeTopology));
+            MSNet::getInstance()->getBeginOfTimestepEvents()->addEvent(command.get(), SIMSTEP + DELTA_T);
+            myTopologyCommand = command.release();
+        }
+    } catch (...) {
+        if (newPlatoon) {
+            platoons.erase(myPlatoonID);
+            for (const std::string& id : myMembers) { memberPlatoons.erase(id); }
+        }
+        throw;
     }
 }
 
@@ -249,19 +333,15 @@ MSDevice_RTSIm::~MSDevice_RTSIm() {
 SUMOTime MSDevice_RTSIm::updateCooperativeTopology(SUMOTime) {
     try {
         MSVehicle* veh = static_cast<MSVehicle*>(&myHolder);
+        myFormationIntact = isPlatoonFormationIntact();
+        if (!myCooperative) { return DELTA_T; }
         auto& model = veh->getCarFollowModel();
         if (!veh->isOnRoad()) {
             model.setParameter(veh, PAR_USE_AUTO_FEEDING, "0");
             model.setParameter(veh, PAR_ACTIVE_CONTROLLER, toString((int)Plexe::ACC));
             return DELTA_T;
         }
-        MSVehicle* leader = cooperativePeer(myLeaderID);
-        MSVehicle* front = cooperativePeer(myFrontID);
-        // getLeader follows the route across lane/edge boundaries. Exclude
-        // crossing foes: the named front must be the physical lane predecessor.
-        const bool valid = leader != nullptr && front != nullptr && leader->isOnRoad() && front->isOnRoad()
-            && veh->getLeader(std::numeric_limits<double>::max(), false).first == front;
-        if (valid) {
+        if (myFormationIntact) {
             // Ideal native state feeding, without a radio/delay model. Refresh
             // IDs each step so no pointer to a removed/replaced peer is reused.
             ParBuffer feed;
@@ -281,6 +361,56 @@ SUMOTime MSDevice_RTSIm::updateCooperativeTopology(SUMOTime) {
         myTopologyCommand = nullptr;
         throw;
     }
+}
+
+bool MSDevice_RTSIm::isPlatoonFormationIntact() const {
+    if (!myPlatoonID.empty()) {
+        MSVehicle* previous = nullptr;
+        bool intact = true;
+        for (const std::string& id : myMembers) {
+            SUMOVehicle* candidate = MSNet::getInstance()->getVehicleControl().getVehicle(id);
+            if (candidate == nullptr) { intact = false; previous = nullptr; continue; }
+            const MSDevice_RTSIm* device = nullptr;
+            for (MSVehicleDevice* item : candidate->getDevices()) {
+                device = dynamic_cast<MSDevice_RTSIm*>(item);
+                if (device != nullptr) { break; }
+            }
+            if (device == nullptr || device->myPlatoonID != myPlatoonID || device->myMembers != myMembers) {
+                throw InvalidArgument("RTSIm platoon member '" + id + "' must declare the same platoon-id and ordered members");
+            }
+            MSVehicle* micro = dynamic_cast<MSVehicle*>(candidate);
+            if (micro == nullptr || !micro->isOnRoad()) { intact = false; previous = nullptr; continue; }
+            if (previous != nullptr && micro->getLeader(std::numeric_limits<double>::max(), false).first != previous) {
+                intact = false;
+            }
+            previous = micro;
+        }
+        // Membership does not change when the formation breaks. Cooperative
+        // feeding resumes only when all assigned members are contiguous again.
+        if (myCooperative) {
+            cooperativePeer(myLeaderID);
+            cooperativePeer(myFrontID);
+        }
+        return intact;
+    }
+    if (!myCooperative) { return false; }
+    const MSVehicle* veh = static_cast<const MSVehicle*>(&myHolder);
+    MSVehicle* leader = cooperativePeer(myLeaderID);
+    MSVehicle* front = cooperativePeer(myFrontID);
+    if (!veh->isOnRoad() || leader == nullptr || front == nullptr || !leader->isOnRoad() || !front->isOnRoad()
+            || veh->getLeader(std::numeric_limits<double>::max(), false).first != front) {
+        return false;
+    }
+    // Legacy leader/front configurations retain their fixed IDs, but the
+    // designated leader must occur ahead in the physical predecessor chain.
+    const MSVehicle* next = front;
+    std::set<const MSVehicle*> visited;
+    visited.insert(veh);
+    while (next != nullptr && visited.insert(next).second) {
+        if (next == leader) { return true; }
+        next = next->getLeader(std::numeric_limits<double>::max(), false).first;
+    }
+    return false;
 }
 
 void MSDevice_RTSIm::applyPlexeDesiredSpeed(double speed) {
@@ -354,6 +484,11 @@ void MSDevice_RTSIm::generateOutput(OutputDevice* out) const {
     out->writeAttr("cooperativeSteps", myCooperativeSteps);
     out->writeAttr("fallbackSteps", myFallbackSteps);
     out->writeAttr("caccSpacing", myCACCSpacing);
+    out->writeAttr("platoonID", myPlatoonID);
+    out->writeAttr("members", joinedMembers(myMembers));
+    out->writeAttr("assignedLeader", myLeaderID);
+    out->writeAttr("assignedFront", myFrontID);
+    out->writeAttr("formationIntact", myFormationIntact);
     out->closeTag();
     out->setPrecision(precision);
 }
@@ -368,6 +503,13 @@ std::string MSDevice_RTSIm::getParameter(const std::string& key) const {
     if (key == "cooperativeSteps") { return toString(myCooperativeSteps); }
     if (key == "fallbackSteps") { return toString(myFallbackSteps); }
     if (key == "caccSpacing") { return toString(myCACCSpacing, 17); }
+    if (key == "platoonID") { return myPlatoonID; }
+    if (key == "members") { return joinedMembers(myMembers); }
+    if (key == "assignedLeader") { return myLeaderID; }
+    if (key == "assignedFront") { return myFrontID; }
+    if (key == "position") { return toString(myPosition); }
+    if (key == "platoonSize") { return toString(mySize); }
+    if (key == "formationIntact") { return toString(myFormationIntact); }
     if (key == "activeController") {
         const MSVehicle* veh = static_cast<const MSVehicle*>(&myHolder);
         if (myPlexe) {

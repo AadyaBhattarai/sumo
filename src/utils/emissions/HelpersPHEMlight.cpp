@@ -29,6 +29,7 @@
 #endif
 #include <foreign/PHEMlight/cpp/Constants.h>
 #include <utils/common/StringUtils.h>
+#include <utils/geom/GeomHelper.h>
 #include <utils/options/OptionsCont.h>
 
 #include "EnergyParams.h"
@@ -36,6 +37,16 @@
 
 // idle speed is usually given in rpm (but may depend on electrical consumers). Actual speed depends on the gear so this number is only a rough estimate
 #define IDLE_SPEED (10 / 3.6)
+
+namespace {
+// SUMO supplies angles in degrees. The external CEP multiplies its gradient
+// argument by 0.01 to obtain the component of gravity along the road. Supply
+// 100 * sin(angle), so its force is m * g * sin(angle), not m * g * tan(angle).
+// This adapter does not change the units of the separate INTERNAL_PHEM API.
+double roadLoadGradient(const double slope) {
+    return 100. * sin(DEG2RAD(slope));
+}
+}
 
 // ===========================================================================
 // method definitions
@@ -259,7 +270,7 @@ HelpersPHEMlight::getModifiedAccel(const SUMOEmissionClass c, const double v, co
     if (currCep != nullptr) {
         const double cd = param == nullptr ? -1. : param->getDoubleOptional(SUMO_ATTR_AIRDRAGCOEFFICIENT, -1.);
         const double fr0 = param == nullptr ? -1. : param->getDoubleOptional(SUMO_ATTR_ROLLDRAGCOEFFICIENT, -1.);
-        return v == 0.0 ? 0.0 : MIN2(a, currCep->GetMaxAccel(v, slope, cd, fr0));
+        return v == 0.0 ? 0.0 : MIN2(a, currCep->GetMaxAccel(v, roadLoadGradient(slope), cd, fr0));
     }
     return a;
 }
@@ -269,7 +280,7 @@ double
 HelpersPHEMlight::getCoastingDecel(const SUMOEmissionClass c, const double v, const double a, const double slope, const EnergyParams* param) const {
     const double cd = param == nullptr ? -1. : param->getDoubleOptional(SUMO_ATTR_AIRDRAGCOEFFICIENT, -1.);
     const double fr0 = param == nullptr ? -1. : param->getDoubleOptional(SUMO_ATTR_ROLLDRAGCOEFFICIENT, -1.);
-    return myCEPs.count(c) == 0 ? 0. : myCEPs.find(c)->second->GetDecelCoast(v, a, slope, cd, fr0);
+    return myCEPs.count(c) == 0 ? 0. : myCEPs.find(c)->second->GetDecelCoast(v, a, roadLoadGradient(slope), cd, fr0);
 }
 
 
@@ -302,13 +313,14 @@ HelpersPHEMlight::compute(const SUMOEmissionClass c, const PollutantsInterface::
         const double cd = param == nullptr ? -1. : param->getDoubleOptional(SUMO_ATTR_AIRDRAGCOEFFICIENT, -1.);
         const double fr0 = param == nullptr ? -1. : param->getDoubleOptional(SUMO_ATTR_ROLLDRAGCOEFFICIENT, -1.);
         const double corrAcc = getModifiedAccel(c, corrSpeed, a, slope, param);
+        const double gradient = roadLoadGradient(slope);
         if (currCep->getFuelType() != PHEMlightdll::Constants::strBEV &&
-                corrAcc < currCep->GetDecelCoast(corrSpeed, corrAcc, slope, cd, fr0) &&
+                corrAcc < currCep->GetDecelCoast(corrSpeed, corrAcc, gradient, cd, fr0) &&
                 corrSpeed > PHEMlightdll::Constants::ZERO_SPEED_ACCURACY) {
             // the IDLE_SPEED fix above is now directly in the decel coast calculation.
             return 0;
         }
-        power = currCep->CalcPower(corrSpeed, corrAcc, slope, cd, fr0);
+        power = currCep->CalcPower(corrSpeed, corrAcc, gradient, cd, fr0);
     }
     const std::string& fuelType = oldCep != nullptr ? oldCep->GetVehicleFuelType() : currCep->getFuelType();
     switch (e) {

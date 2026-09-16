@@ -96,6 +96,11 @@
             <xsd:attribute name="cooperativeSteps" use="optional" type="xsd:nonNegativeInteger"/>
             <xsd:attribute name="fallbackSteps" use="optional" type="xsd:nonNegativeInteger"/>
             <xsd:attribute name="caccSpacing" use="optional" type="nonNegativeFloatTypeWithErrorValue"/>
+            <xsd:attribute name="platoonID" use="optional" type="xsd:string"/>
+            <xsd:attribute name="members" use="optional" type="xsd:string"/>
+            <xsd:attribute name="assignedLeader" use="optional" type="xsd:string"/>
+            <xsd:attribute name="assignedFront" use="optional" type="xsd:string"/>
+            <xsd:attribute name="formationIntact" use="optional" type="xsd:boolean"/>
         </xsd:complexType>
     </xsd:element>
 

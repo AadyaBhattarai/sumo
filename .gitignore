@@ -136,3 +136,5 @@ __pycache__
 /tests/_*
 /tests/activitygen/filter_files
 /tests/netedit/filter_files
+# RTSIm local regression artifacts
+/tests/rtsim_local/generated*/

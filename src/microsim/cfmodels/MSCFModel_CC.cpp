@@ -337,10 +337,16 @@ MSCFModel_CC::finalizeSpeed(MSVehicle* const veh, double vPos) const {
             auto* krauss = static_cast<MSCFModel_Krauss*>(myHumanDriver);
             krauss->setMaxAccel(myAccel);
             const double oldV = veh->getSpeed();
-            const double vMin = MIN2(minNextSpeed(oldV, veh), MAX2(vPos, minNextSpeedEmergency(oldV, veh)));
-            const double vMax = MAX2(vMin, vPos);
-            vPos = krauss->applyDawdling(veh, vMin, vMax, vars->rtsimSigma,
-                                        vars->rtsimSigmaStep, vars->rtsimDawdleState.get(), veh->getRNG());
+            // vPos is a controller command before engine actuation. It may
+            // request stronger braking than the vehicle can apply in one step.
+            // Dawdling must not raise that command to a physical braking bound:
+            // the existing actuator below is responsible for applying it.
+            const double vMin = MIN2(vPos, minNextSpeed(oldV, veh));
+            const double vDawdle = krauss->applyDawdling(veh, vMin, vPos, vars->rtsimSigma,
+                                                       vars->rtsimSigmaStep, vars->rtsimDawdleState.get(), veh->getRNG());
+            // Also preserve a negative stop command if the shared transformation
+            // clips it to zero (Euler), or uses a held acceleration (sigmaStep).
+            vPos = MIN2(vPos, vDawdle);
         }
         controllerAcceleration = SPEED2ACCEL(vPos - veh->getSpeed());
         controllerAcceleration = std::min(vars->uMax, std::max(vars->uMin, controllerAcceleration));

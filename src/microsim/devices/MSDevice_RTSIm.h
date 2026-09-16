@@ -8,6 +8,7 @@
 #include "MSVehicleDevice.h"
 #include <utils/common/SUMOTime.h>
 #include <utils/common/RandHelper.h>
+#include <vector>
 
 template<class T> class WrappingCommand;
 
@@ -33,6 +34,7 @@ private:
     void updateSurface(const MSLane* lane);
     void applyPlexeDesiredSpeed(double speed);
     SUMOTime updateCooperativeTopology(SUMOTime currentTime);
+    bool isPlatoonFormationIntact() const;
     double myCd = -1.;
     double myDefaultFr0 = -1.;
     double myFr0 = -1.;
@@ -54,6 +56,9 @@ private:
     std::string myRequestedController = "unchanged";
     std::string myLeaderID;
     std::string myFrontID;
+    std::string myPlatoonID;
+    std::vector<std::string> myMembers;
+    bool myFormationIntact = false;
     double myCACCSpacing = -1.;
     long myCooperativeSteps = 0;
     long myFallbackSteps = 0;

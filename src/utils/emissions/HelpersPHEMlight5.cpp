@@ -163,7 +163,8 @@ HelpersPHEMlight5::calcWheelPower(PHEMlightdllV5::CEP* currCep, const double v, 
     double power = (mass + load) * PHEMlightdllV5::Constants::GRAVITY_CONST * currCep->getResistance(v, rf0) * v;
     power += (cw * PHEMlightdllV5::Constants::AIR_DENSITY_CONST / 2) * std::pow(v, 3);
     power += (mass * rotFactor + massRot + load) * a * v;
-    power += (mass + load) * PHEMlightdllV5::Constants::GRAVITY_CONST * slope * 0.01 * v;
+    // SUMO slope is an angle in degrees, as in getCoastingDecel below.
+    power += (mass + load) * PHEMlightdllV5::Constants::GRAVITY_CONST * sin(DEG2RAD(slope)) * v;
     return power / 1000.;
 }
 
