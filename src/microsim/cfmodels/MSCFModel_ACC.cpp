@@ -36,6 +36,7 @@
 
 #include "MSCFModel_ACC.h"
 #include <microsim/MSVehicle.h>
+#include <microsim/devices/MSDevice_RTSIm.h>
 #include <microsim/MSLane.h>
 #include <utils/common/RandHelper.h>
 #include <utils/common/SUMOTime.h>
@@ -92,6 +93,13 @@ MSCFModel_ACC::MSCFModel_ACC(const MSVehicleType* vtype) :
 }
 
 MSCFModel_ACC::~MSCFModel_ACC() {}
+
+
+double
+MSCFModel_ACC::patchSpeedBeforeLC(const MSVehicle* veh, double vMin, double vMax) const {
+    MSDevice_RTSIm* device = static_cast<MSDevice_RTSIm*>(veh->getDevice(typeid(MSDevice_RTSIm)));
+    return device == nullptr ? vMax : device->patchControllerSpeed(vMin, vMax);
+}
 
 
 void

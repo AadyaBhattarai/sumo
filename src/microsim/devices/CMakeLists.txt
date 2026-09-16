@@ -1,4 +1,8 @@
 set(microsim_devices_STAT_SRCS
+   MSDevice_RTSIm.cpp
+   MSDevice_RTSIm.h
+   RTSImCFDTable.cpp
+   RTSImCFDTable.h
    MSDevice.cpp
    MSDevice.h
    MSDevice_SSM.cpp

@@ -74,6 +74,11 @@ public:
      */
     void setMass(const double mass);
 
+    /// Vehicle-local overrides used by native aerodynamic/surface devices.
+    void setAirDragCoefficient(const double coefficient);
+    void setRollDragCoefficient(const double coefficient);
+    void clearRollDragCoefficient();
+
     /**@brief Returns the mass of all transportables in the vehicle
      * @return The total mass of persons and containers in kg
      */

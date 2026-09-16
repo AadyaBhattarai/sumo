@@ -17,6 +17,7 @@
         <xsd:complexType>
             <xsd:choice maxOccurs="unbounded">
                 <xsd:element minOccurs="0" ref="example_device"/>
+                <xsd:element minOccurs="0" ref="rtsim"/>
                 <xsd:element minOccurs="0" ref="emissions"/>
                 <xsd:element minOccurs="0" ref="taxi"/>
                 <xsd:element minOccurs="0" ref="bluelight"/>
@@ -65,6 +66,36 @@
         <xsd:complexType>
             <xsd:attribute name="customValue1" use="required" type="floatType"/>
             <xsd:attribute name="customValue2" use="required" type="floatType"/>
+        </xsd:complexType>
+    </xsd:element>
+
+    <xsd:element name="rtsim">
+        <xsd:complexType>
+            <!-- A value of -1 identifies an unspecified RTSIm override. -->
+            <xsd:attribute name="automationLevel" use="required">
+                <xsd:simpleType>
+                    <xsd:restriction base="xsd:integer">
+                        <xsd:minInclusive value="-1"/>
+                        <xsd:maxInclusive value="5"/>
+                    </xsd:restriction>
+                </xsd:simpleType>
+            </xsd:attribute>
+            <xsd:attribute name="sigma" use="required" type="nonNegativeFloatTypeWithErrorValue"/>
+            <xsd:attribute name="tau" use="required" type="nonNegativeFloatTypeWithErrorValue"/>
+            <xsd:attribute name="cd" use="required" type="nonNegativeFloatTypeWithErrorValue"/>
+            <xsd:attribute name="fr0" use="required" type="nonNegativeFloatTypeWithErrorValue"/>
+            <xsd:attribute name="platoonSize" use="required" type="xsd:positiveInteger"/>
+            <xsd:attribute name="position" use="required" type="xsd:positiveInteger"/>
+            <xsd:attribute name="nominalGap" use="required" type="nonNegativeFloatType"/>
+            <xsd:attribute name="lastSlopeDegrees" use="required" type="floatType"/>
+            <xsd:attribute name="steps" use="required" type="xsd:nonNegativeInteger"/>
+            <xsd:attribute name="model" use="optional" type="xsd:string"/>
+            <xsd:attribute name="bound" use="optional" type="xsd:string"/>
+            <xsd:attribute name="controller" use="optional" type="xsd:string"/>
+            <xsd:attribute name="requestedController" use="optional" type="xsd:string"/>
+            <xsd:attribute name="cooperativeSteps" use="optional" type="xsd:nonNegativeInteger"/>
+            <xsd:attribute name="fallbackSteps" use="optional" type="xsd:nonNegativeInteger"/>
+            <xsd:attribute name="caccSpacing" use="optional" type="nonNegativeFloatTypeWithErrorValue"/>
         </xsd:complexType>
     </xsd:element>
 

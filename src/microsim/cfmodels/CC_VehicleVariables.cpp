@@ -17,6 +17,7 @@
 ///
 /****************************************************************************/
 #include "CC_VehicleVariables.h"
+#include <utils/common/UtilExceptions.h>
 
 //initialize default L and K matrices
 const int CC_VehicleVariables::defaultL[][MAX_N_CARS] = {
@@ -90,4 +91,12 @@ CC_VehicleVariables::~CC_VehicleVariables() {
     if (engine) {
         delete engine;
     }
+}
+
+void
+CC_VehicleVariables::saveState(OutputDevice& out, const MSCFModel& cfm) const {
+    if (rtsimSigma >= 0.) {
+        throw ProcessError("Saving state with RTSIm shared Krauss sigma is not implemented");
+    }
+    MSCFModel::VehicleVariables::saveState(out, cfm);
 }

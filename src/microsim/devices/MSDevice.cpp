@@ -34,6 +34,7 @@
 #include "MSDevice_BTreceiver.h"
 #include "MSDevice_BTsender.h"
 #include "MSDevice_Example.h"
+#include "MSDevice_RTSIm.h"
 #include "MSDevice_StationFinder.h"
 #include "MSDevice_Battery.h"
 #include "MSDevice_SSM.h"
@@ -75,6 +76,7 @@ SumoRNG MSDevice::myEquipmentRNG("deviceEquipment");
 // ---------------------------------------------------------------------------
 void
 MSDevice::insertOptions(OptionsCont& oc) {
+    MSDevice_RTSIm::insertOptions(oc);
     MSDevice_Routing::insertOptions(oc);
     MSDevice_Emissions::insertOptions(oc);
     MSVehicleDevice_BTreceiver::insertOptions(oc);
@@ -115,6 +117,8 @@ MSDevice::buildVehicleDevices(SUMOVehicle& v, std::vector<MSVehicleDevice*>& int
     MSDevice_Vehroutes::buildVehicleDevices(v, into);
     MSDevice_Tripinfo::buildVehicleDevices(v, into);
     MSDevice_Routing::buildVehicleDevices(v, into);
+    // Tripinfo opens the output record first; RTSIm precedes emissions.
+    MSDevice_RTSIm::buildVehicleDevices(v, into);
     MSDevice_Emissions::buildVehicleDevices(v, into);
     MSVehicleDevice_BTreceiver::buildVehicleDevices(v, into);
     MSVehicleDevice_BTsender::buildVehicleDevices(v, into);
@@ -147,6 +151,7 @@ MSDevice::buildTransportableDevices(MSTransportable& p, std::vector<MSTransporta
 
 void
 MSDevice::cleanupAll() {
+    MSDevice_RTSIm::cleanup();
     MSRoutingEngine::cleanup();
     MSDevice_Tripinfo::cleanup();
     MSDevice_FCD::cleanup();

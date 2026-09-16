@@ -254,18 +254,22 @@ HelpersPHEMlight::getEmission(const PHEMCEP* oldCep, PHEMlightdll::CEP* currCep,
 
 
 double
-HelpersPHEMlight::getModifiedAccel(const SUMOEmissionClass c, const double v, const double a, const double slope, const EnergyParams* /* param */) const {
+HelpersPHEMlight::getModifiedAccel(const SUMOEmissionClass c, const double v, const double a, const double slope, const EnergyParams* param) const {
     PHEMlightdll::CEP* currCep = myCEPs.count(c) == 0 ? 0 : myCEPs.find(c)->second;
     if (currCep != nullptr) {
-        return v == 0.0 ? 0.0 : MIN2(a, currCep->GetMaxAccel(v, slope));
+        const double cd = param == nullptr ? -1. : param->getDoubleOptional(SUMO_ATTR_AIRDRAGCOEFFICIENT, -1.);
+        const double fr0 = param == nullptr ? -1. : param->getDoubleOptional(SUMO_ATTR_ROLLDRAGCOEFFICIENT, -1.);
+        return v == 0.0 ? 0.0 : MIN2(a, currCep->GetMaxAccel(v, slope, cd, fr0));
     }
     return a;
 }
 
 
 double
-HelpersPHEMlight::getCoastingDecel(const SUMOEmissionClass c, const double v, const double a, const double slope, const EnergyParams* /* param */) const {
-    return myCEPs.count(c) == 0 ? 0. : myCEPs.find(c)->second->GetDecelCoast(v, a, slope);
+HelpersPHEMlight::getCoastingDecel(const SUMOEmissionClass c, const double v, const double a, const double slope, const EnergyParams* param) const {
+    const double cd = param == nullptr ? -1. : param->getDoubleOptional(SUMO_ATTR_AIRDRAGCOEFFICIENT, -1.);
+    const double fr0 = param == nullptr ? -1. : param->getDoubleOptional(SUMO_ATTR_ROLLDRAGCOEFFICIENT, -1.);
+    return myCEPs.count(c) == 0 ? 0. : myCEPs.find(c)->second->GetDecelCoast(v, a, slope, cd, fr0);
 }
 
 
@@ -291,14 +295,20 @@ HelpersPHEMlight::compute(const SUMOEmissionClass c, const PollutantsInterface::
 #endif
     PHEMlightdll::CEP* currCep = myCEPs.count(c) == 0 ? 0 : myCEPs.find(c)->second;
     if (currCep != nullptr) {
+        // Apply road-load overrides without mutating a CEP shared by vehicles.
+        // Existing light-vehicle pollutant curve normalization remains dataset-based;
+        // this is not equivalent to rebuilding those curves from a modified .veh file.
+        // Heavy-vehicle pollutant curves and fuel curves use rated-power normalization.
+        const double cd = param == nullptr ? -1. : param->getDoubleOptional(SUMO_ATTR_AIRDRAGCOEFFICIENT, -1.);
+        const double fr0 = param == nullptr ? -1. : param->getDoubleOptional(SUMO_ATTR_ROLLDRAGCOEFFICIENT, -1.);
         const double corrAcc = getModifiedAccel(c, corrSpeed, a, slope, param);
         if (currCep->getFuelType() != PHEMlightdll::Constants::strBEV &&
-                corrAcc < currCep->GetDecelCoast(corrSpeed, corrAcc, slope) &&
+                corrAcc < currCep->GetDecelCoast(corrSpeed, corrAcc, slope, cd, fr0) &&
                 corrSpeed > PHEMlightdll::Constants::ZERO_SPEED_ACCURACY) {
             // the IDLE_SPEED fix above is now directly in the decel coast calculation.
             return 0;
         }
-        power = currCep->CalcPower(corrSpeed, corrAcc, slope);
+        power = currCep->CalcPower(corrSpeed, corrAcc, slope, cd, fr0);
     }
     const std::string& fuelType = oldCep != nullptr ? oldCep->GetVehicleFuelType() : currCep->getFuelType();
     switch (e) {

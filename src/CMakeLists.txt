@@ -23,8 +23,18 @@ if (MSVC)
     set(sumoguilibs ${sumoguilibs} opengl32 glu32)
 endif ()
 if ((GNU_COMPILER OR CLANG_COMPILER) AND NOT APPLE)
+    if (MINGW)
+        # Do not force-load external DLL import stubs: Xerces inline methods may
+        # already be emitted by SUMO, and unused Winsock APIs may be unavailable.
+        list(REMOVE_ITEM sumolibs ${XercesC_LIBRARIES} ws2_32)
+        list(REMOVE_ITEM sumoguilibs ${XercesC_LIBRARIES} ws2_32)
+    endif ()
     set(sumolibs -Wl,--whole-archive ${sumolibs} -Wl,--no-whole-archive)
     set(sumoguilibs -Wl,--whole-archive ${sumoguilibs} -Wl,--no-whole-archive)
+    if (MINGW)
+        list(APPEND sumolibs ${XercesC_LIBRARIES} ws2_32)
+        list(APPEND sumoguilibs ${XercesC_LIBRARIES} ws2_32)
+    endif ()
 endif()
 
 add_subdirectory(activitygen)

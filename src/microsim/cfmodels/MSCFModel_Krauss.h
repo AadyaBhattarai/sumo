@@ -23,8 +23,11 @@
 #pragma once
 #include <config.h>
 
+#include <utils/common/RandHelper.h>
 #include "MSCFModel_KraussOrig1.h"
 #include <utils/xml/SUMOXMLDefinitions.h>
+
+
 
 
 // ===========================================================================
@@ -97,7 +100,8 @@ public:
     }
 
 
-private:
+    /// @brief Explicit per-vehicle state for reusing the Krauss dawdling update.
+    /// A caller with a different car-following model must own a separate instance.
     class VehicleVariables : public MSCFModel::VehicleVariables {
     public:
         // no speed update happens in the insertion step
@@ -117,6 +121,17 @@ private:
          */
         void loadState(const SUMOSAXAttributes& attrs);
     };
+
+    /** @brief Apply the Krauss dawdling update using explicit parameters and state.
+     * The acceleration scale is this model's configured maximum acceleration.
+     * The junction-model sigma override is applied just as in patchSpeedBeforeLC.
+     * @param[in] sigmaStep Dawdling interval, positive and aligned to DELTA_T
+     * @param[in,out] state Independent vehicle state; required if sigmaStep > DELTA_T
+     * @param[in] rng Random stream used for the existing dawdle2 operation
+     */
+    double applyDawdling(const MSVehicle* veh, double vMin, double vMax,
+                        double baseSigma, SUMOTime sigmaStep,
+                        VehicleVariables* state, SumoRNG* rng) const;
 
 protected:
 

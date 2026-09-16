@@ -166,6 +166,12 @@ struct VEHICLE_DATA {
 // set ACC headway time
 #define PAR_ACC_HEADWAY_TIME             "ccaht"
 
+// Optional shared Krauss dawdling for ACC, PATH CACC, and Ploeg before engine actuation.
+// sigma is dimensionless in [0, 1]; omission disables the extension, zero enables it.
+// sigmaStep is the Krauss update interval in seconds; changing it restarts the cadence.
+#define PAR_RTSIM_SIGMA                  "rtsim.sigma"
+#define PAR_RTSIM_SIGMA_STEP             "rtsim.sigmaStep"
+
 // return engine information (for the realistic engine model)
 #define PAR_ENGINE_DATA                  "cced"
 

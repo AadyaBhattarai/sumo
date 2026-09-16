@@ -197,15 +197,17 @@ namespace PHEMlightdll {
         _drivingPower = value;
     }
 
-    double CEP::CalcPower(double speed, double acc, double gradient) {
+    double CEP::CalcPower(double speed, double acc, double gradient, double airDragCoefficient, double rollDragCoefficient) {
         // Declaration
         double power = 0;
         double rotFactor = GetRotationalCoeffecient(speed);
         double powerAux = (_auxPower * _ratedPower);
+        const double cWValue = airDragCoefficient >= 0. ? airDragCoefficient : _cWValue;
+        const double resistanceF0 = rollDragCoefficient >= 0. ? rollDragCoefficient : _resistanceF0;
 
         // Calculate the power
-        power += (_massVehicle + _vehicleLoading) * Constants::GRAVITY_CONST * (_resistanceF0 + _resistanceF1 * speed + _resistanceF4 * std::pow(speed, 4)) * speed;
-        power += (_crossSectionalArea * _cWValue * Constants::AIR_DENSITY_CONST / 2) * std::pow(speed, 3);
+        power += (_massVehicle + _vehicleLoading) * Constants::GRAVITY_CONST * (resistanceF0 + _resistanceF1 * speed + _resistanceF4 * std::pow(speed, 4)) * speed;
+        power += (_crossSectionalArea * cWValue * Constants::AIR_DENSITY_CONST / 2) * std::pow(speed, 3);
         power += (_massVehicle * rotFactor + _vehicleMassRot + _vehicleLoading) * acc * speed;
         power += (_massVehicle + _vehicleLoading) * Constants::GRAVITY_CONST * gradient * 0.01 * speed;
         power /= 1000;
@@ -323,13 +325,13 @@ namespace PHEMlightdll {
         return (_FC * fCBr - _CO * fCCO - _HC * fCHC) / fCCO2;
     }
 
-    double CEP::GetDecelCoast(double speed, double acc, double gradient) {
+    double CEP::GetDecelCoast(double speed, double acc, double gradient, double airDragCoefficient, double rollDragCoefficient) {
         //Declaration
         int upperIndex;
         int lowerIndex;
 
         if (speed < Constants::SPEED_DCEL_MIN) {
-            return speed / Constants::SPEED_DCEL_MIN * GetDecelCoast(Constants::SPEED_DCEL_MIN, acc, gradient);
+            return speed / Constants::SPEED_DCEL_MIN * GetDecelCoast(Constants::SPEED_DCEL_MIN, acc, gradient, airDragCoefficient, rollDragCoefficient);
         }
 
         double rotCoeff = GetRotationalCoeffecient(speed);
@@ -349,9 +351,11 @@ namespace PHEMlightdll {
             fMot = (-Interpolate(nNorm, _nNormTable[lowerIndex], _nNormTable[upperIndex], _dragNormTable[lowerIndex], _dragNormTable[upperIndex]) * _ratedPower * 1000 / speed) / 0.9;
         }
 
-        double fRoll = (_resistanceF0 + _resistanceF1 * speed + std::pow(_resistanceF2 * speed, 2) + std::pow(_resistanceF3 * speed, 3) + std::pow(_resistanceF4 * speed, 4)) * (_massVehicle + _vehicleLoading) * Constants::GRAVITY_CONST;
+        const double cWValue = airDragCoefficient >= 0. ? airDragCoefficient : _cWValue;
+        const double resistanceF0 = rollDragCoefficient >= 0. ? rollDragCoefficient : _resistanceF0;
+        double fRoll = (resistanceF0 + _resistanceF1 * speed + std::pow(_resistanceF2 * speed, 2) + std::pow(_resistanceF3 * speed, 3) + std::pow(_resistanceF4 * speed, 4)) * (_massVehicle + _vehicleLoading) * Constants::GRAVITY_CONST;
 
-        double fAir = _cWValue * _crossSectionalArea * 1.2 * 0.5 * std::pow(speed, 2);
+        double fAir = cWValue * _crossSectionalArea * 1.2 * 0.5 * std::pow(speed, 2);
 
         double fGrad = (_massVehicle + _vehicleLoading) * Constants::GRAVITY_CONST * gradient / 100;
 
@@ -417,9 +421,9 @@ namespace PHEMlightdll {
         return e1 + (px - p1) / (p2 - p1) * (e2 - e1);
     }
 
-    double CEP::GetMaxAccel(double speed, double gradient) {
+    double CEP::GetMaxAccel(double speed, double gradient, double airDragCoefficient, double rollDragCoefficient) {
         double rotFactor = GetRotationalCoeffecient(speed);
-        double pMaxForAcc = GetPMaxNorm(speed) * _ratedPower - CalcPower(speed, 0, gradient);
+        double pMaxForAcc = GetPMaxNorm(speed) * _ratedPower - CalcPower(speed, 0, gradient, airDragCoefficient, rollDragCoefficient);
 
         return (pMaxForAcc * 1000) / ((_massVehicle * rotFactor + _vehicleMassRot + _vehicleLoading) * speed);
     }

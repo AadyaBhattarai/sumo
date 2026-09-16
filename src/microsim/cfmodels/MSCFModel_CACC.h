@@ -60,6 +60,9 @@ public:
     /// @name Implementations of the MSCFModel interface
     /// @{
 
+    /// @brief Apply optional per-vehicle RTSIm controller noise within the speed bounds.
+    double patchSpeedBeforeLC(const MSVehicle* veh, double vMin, double vMax) const override;
+
     /** @brief Computes the vehicle's safe speed without a leader
      *
      * Returns the velocity of the vehicle in dependence to the length of the free street and the target

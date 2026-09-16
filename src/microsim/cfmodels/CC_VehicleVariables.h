@@ -21,10 +21,12 @@
 
 #include "CC_Const.h"
 #include <microsim/cfmodels/MSCFModel.h>
+#include <microsim/cfmodels/MSCFModel_Krauss.h>
 #include <utils/geom/Position.h>
 #include <string.h>
 #include <string>
 #include <map>
+#include <memory>
 
 #include <microsim/engine/GenericEngineModel.h>
 #include <microsim/engine/FirstOrderLagModel.h>
@@ -82,8 +84,18 @@ public:
     CC_VehicleVariables();
     ~CC_VehicleVariables();
 
+    /// Reject incomplete checkpoints when shared Krauss dawdling is enabled.
+    void saveState(OutputDevice& out, const MSCFModel& cfm) const override;
+
     /// @brief acceleration as computed by the controller, to be sent to other vehicles
     double controllerAcceleration;
+
+    // Optional reuse of Krauss dawdling before the ACC, PATH CACC, or Ploeg actuator.
+    // The absent value -1 preserves the native controller path. Explicit zero
+    // still uses Krauss scheduling and random draws; it does not mean disabled.
+    double rtsimSigma = -1.;
+    SUMOTime rtsimSigmaStep = DELTA_T;
+    std::unique_ptr<MSCFModel_Krauss::VehicleVariables> rtsimDawdleState;
 
     /// @brief current front vehicle speed
     double frontSpeed;

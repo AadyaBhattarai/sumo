@@ -92,17 +92,27 @@ MSCFModel_Krauss::VehicleVariables::loadState(const SUMOSAXAttributes& attrs) {
 
 double
 MSCFModel_Krauss::patchSpeedBeforeLC(const MSVehicle* veh, double vMin, double vMax) const {
+    VehicleVariables* state = myDawdleStep > DELTA_T
+                              ? (VehicleVariables*)veh->getCarFollowVariables() : nullptr;
+    return applyDawdling(veh, vMin, vMax, myDawdle, myDawdleStep, state, veh->getRNG());
+}
+
+
+double
+MSCFModel_Krauss::applyDawdling(const MSVehicle* veh, double vMin, double vMax,
+                              double baseSigma, SUMOTime sigmaStep,
+                              VehicleVariables* state, SumoRNG* rng) const {
     const double sigma = (veh->passingMinor()
-                          ? veh->getVehicleType().getParameter().getJMParam(SUMO_ATTR_JM_SIGMA_MINOR, myDawdle)
-                          : myDawdle);
+                          ? veh->getVehicleType().getParameter().getJMParam(SUMO_ATTR_JM_SIGMA_MINOR, baseSigma)
+                          : baseSigma);
     double vDawdle;
-    if (myDawdleStep > DELTA_T) {
-        VehicleVariables* vars = (VehicleVariables*)veh->getCarFollowVariables();
-        if (SIMSTEP % myDawdleStep == vars->updateOffset) {
-            const double vD = MAX2(vMin, dawdle2(vMax, sigma, veh->getRNG()));
+    if (sigmaStep > DELTA_T) {
+        VehicleVariables* vars = state;
+        if (SIMSTEP % sigmaStep == vars->updateOffset) {
+            const double vD = MAX2(vMin, dawdle2(vMax, sigma, rng));
             const double a1 = SPEED2ACCEL(vMax - veh->getSpeed());
             const double a2 = SPEED2ACCEL(vD - vMax);
-            const double accelMax = (veh->getLane()->getVehicleMaxSpeed(veh) - veh->getSpeed()) / STEPS2TIME(myDawdleStep);
+            const double accelMax = (veh->getLane()->getVehicleMaxSpeed(veh) - veh->getSpeed()) / STEPS2TIME(sigmaStep);
             // avoid exceeding maxSpeed before the next sigmaStep
             vars->accelDawdle = MIN2(a1, accelMax) + a2;
             vDawdle = veh->getSpeed() + ACCEL2SPEED(vars->accelDawdle);
@@ -114,7 +124,7 @@ MSCFModel_Krauss::patchSpeedBeforeLC(const MSVehicle* veh, double vMin, double v
             //std::cout << SIMTIME << " v=" << veh->getSpeed() << " safeAccel=" << safeAccel << " accel=" << accel << " vDawdle=" << vDawdle << "\n";
         }
     } else {
-        vDawdle = MAX2(vMin, dawdle2(vMax, sigma, veh->getRNG()));
+        vDawdle = MAX2(vMin, dawdle2(vMax, sigma, rng));
         //const double accel1 = SPEED2ACCEL(vMax - veh->getSpeed());
         //const double accel2 = SPEED2ACCEL(vDawdle - vMax);
         //std::cout << SIMTIME << " v=" << veh->getSpeed() << " updated vDawdle=" << vDawdle << " a1=" << accel1 << " a2=" << accel2 << " accelDawdle=" << SPEED2ACCEL(vDawdle - veh->getSpeed()) << "\n";

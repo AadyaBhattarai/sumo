@@ -58,6 +58,9 @@ public:
     /// @name Implementations of the MSCFModel interface
     /// @{
 
+    /// @brief Apply optional per-vehicle RTSIm controller noise within the speed bounds.
+    double patchSpeedBeforeLC(const MSVehicle* veh, double vMin, double vMax) const override;
+
     /** @brief Computes the vehicle's safe speed (no dawdling)
     * @param[in] veh The vehicle (EGO)
     * @param[in] speed The vehicle's speed

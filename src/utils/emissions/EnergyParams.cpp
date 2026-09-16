@@ -19,6 +19,7 @@
 // A class for parameters used by the emission models
 /****************************************************************************/
 #include <config.h>
+#include <cmath>
 
 #include <utils/common/MsgHandler.h>
 #include <utils/common/StringUtils.h>
@@ -105,6 +106,24 @@ EnergyParams::EnergyParams(const SUMOVTypeParameter* typeParams) {
 
 
 EnergyParams::~EnergyParams() {}
+
+void EnergyParams::setAirDragCoefficient(const double coefficient) {
+    if (!std::isfinite(coefficient) || coefficient <= 0.) {
+        throw InvalidArgument("Air drag coefficient must be finite and positive");
+    }
+    myMap[SUMO_ATTR_AIRDRAGCOEFFICIENT] = coefficient;
+}
+
+void EnergyParams::setRollDragCoefficient(const double coefficient) {
+    if (!std::isfinite(coefficient) || coefficient < 0.) {
+        throw InvalidArgument("Rolling resistance coefficient must be finite and nonnegative");
+    }
+    myMap[SUMO_ATTR_ROLLDRAGCOEFFICIENT] = coefficient;
+}
+
+void EnergyParams::clearRollDragCoefficient() {
+    myMap.erase(SUMO_ATTR_ROLLDRAGCOEFFICIENT);
+}
 
 
 void

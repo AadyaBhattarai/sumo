@@ -20,10 +20,12 @@
 #include <config.h>
 
 #include <algorithm>
+#include <cmath>
 #include <utils/common/RandHelper.h>
 #include <utils/common/SUMOTime.h>
 #include <utils/common/StringUtils.h>
 #include <microsim/MSVehicle.h>
+#include <microsim/MSGlobals.h>
 #include <microsim/MSVehicleControl.h>
 #include <microsim/MSNet.h>
 #include <microsim/MSEdge.h>
@@ -78,6 +80,9 @@ MSCFModel_CC::~MSCFModel_CC() {
 MSCFModel::VehicleVariables*
 MSCFModel_CC::createVehicleVariables() const {
     CC_VehicleVariables* vars = new CC_VehicleVariables();
+    vars->rtsimDawdleState.reset(new MSCFModel_Krauss::VehicleVariables(vars->rtsimSigmaStep));
+    // Krauss's initial offset may equal the interval; keep the CC phase in [0, interval).
+    vars->rtsimDawdleState->updateOffset %= vars->rtsimSigmaStep;
     vars->ccKp = myKp;
     vars->accLambda = myLambda;
     vars->caccSpacing = myConstantSpacing;
@@ -318,6 +323,25 @@ MSCFModel_CC::finalizeSpeed(MSVehicle* const veh, double vPos) const {
     }
 
     if (vars->activeController != Plexe::DRIVER) {
+        if (vars->rtsimSigma >= 0. && !vars->useFixedAcceleration
+                && (vars->activeController == Plexe::ACC || vars->activeController == Plexe::CACC
+                    || vars->activeController == Plexe::PLOEG)) {
+            // ACC, PATH CACC, and Ploeg reuse Krauss's speed transformation,
+            // cadence, and random stream.
+            // Separate state avoids casting CC variables to Krauss variables.
+            // The existing actuator still filters the resulting command, so
+            // this does not make the full trajectory identical to Krauss.
+            if (veh->getActionStepLength() != DELTA_T) {
+                throw ProcessError("RTSIm shared Krauss sigma requires actionStepLength equal to the simulation timestep for vehicle '" + veh->getID() + "'");
+            }
+            auto* krauss = static_cast<MSCFModel_Krauss*>(myHumanDriver);
+            krauss->setMaxAccel(myAccel);
+            const double oldV = veh->getSpeed();
+            const double vMin = MIN2(minNextSpeed(oldV, veh), MAX2(vPos, minNextSpeedEmergency(oldV, veh)));
+            const double vMax = MAX2(vMin, vPos);
+            vPos = krauss->applyDawdling(veh, vMin, vMax, vars->rtsimSigma,
+                                        vars->rtsimSigmaStep, vars->rtsimDawdleState.get(), veh->getRNG());
+        }
         controllerAcceleration = SPEED2ACCEL(vPos - veh->getSpeed());
         controllerAcceleration = std::min(vars->uMax, std::max(vars->uMin, controllerAcceleration));
         //compute the actual acceleration applied by the engine
@@ -765,6 +789,46 @@ void MSCFModel_CC::setParameter(MSVehicle* veh, const std::string& key, const st
 
     vars = (CC_VehicleVariables*) veh->getCarFollowVariables();
     try {
+        if (key == PAR_RTSIM_SIGMA) {
+            const double sigma = StringUtils::toDouble(value);
+            if (!std::isfinite(sigma) || sigma < 0. || sigma > 1.) {
+                throw InvalidArgument("RTSIm controller sigma must be finite and in [0,1]");
+            }
+            if (MSGlobals::gNumSimThreads > 1) {
+                throw InvalidArgument("RTSIm shared Krauss sigma currently requires a single simulation thread");
+            }
+            if (vars->rtsimSigmaStep % DELTA_T != 0) {
+                throw InvalidArgument("RTSIm sigmaStep must be a multiple of the simulation step; set sigmaStep before enabling sigma");
+            }
+            if (veh->getActionStepLength() != DELTA_T) {
+                throw InvalidArgument("RTSIm shared Krauss sigma requires actionStepLength equal to the simulation timestep for vehicle '" + veh->getID() + "'");
+            }
+            // Setting sigma enables literal Krauss dawdling, including its
+            // random draws and scheduling when sigma is explicitly zero.
+            vars->rtsimSigma = sigma;
+            return;
+        }
+        if (key == PAR_RTSIM_SIGMA_STEP) {
+            const double seconds = StringUtils::toDouble(value);
+            if (!std::isfinite(seconds) || seconds <= 0.) {
+                throw InvalidArgument("RTSIm sigmaStep must be finite and positive");
+            }
+            checkTimeBounds(seconds);
+            const SUMOTime interval = TIME2STEPS(seconds);
+            if (interval <= 0 || interval % DELTA_T != 0
+                    || std::fabs(STEPS2TIME(interval) - seconds) > 1e-9) {
+                throw InvalidArgument("RTSIm sigmaStep must be an exact multiple of the simulation step");
+            }
+            // A changed interval starts a fresh Krauss cadence and held
+            // acceleration, including when changed at runtime.
+            if (interval != vars->rtsimSigmaStep) {
+                vars->rtsimDawdleState.reset(new MSCFModel_Krauss::VehicleVariables(interval));
+                // Wrap an interval-boundary offset so the modulo-based update remains reachable.
+                vars->rtsimDawdleState->updateOffset %= interval;
+                vars->rtsimSigmaStep = interval;
+            }
+            return;
+        }
         if (key.compare(PAR_LEADER_SPEED_AND_ACCELERATION) == 0) {
             double x, y, vx, vy;
             buf >> vars->leaderSpeed >> vars->leaderAcceleration >> x >> y >> vars->leaderDataReadTime
@@ -1057,6 +1121,12 @@ std::string MSCFModel_CC::getParameter(const MSVehicle* veh, const std::string& 
     ParBuffer buf;
 
     vars = (CC_VehicleVariables*) veh->getCarFollowVariables();
+    if (key == PAR_RTSIM_SIGMA) {
+        return toString(vars->rtsimSigma, 12);
+    }
+    if (key == PAR_RTSIM_SIGMA_STEP) {
+        return toString(STEPS2TIME(vars->rtsimSigmaStep), 12);
+    }
     if (key.compare(PAR_SPEED_AND_ACCELERATION) == 0) {
         Position velocity = veh->getVelocityVector();
         buf << veh->getSpeed() << veh->getAcceleration() <<
@@ -1104,6 +1174,9 @@ std::string MSCFModel_CC::getParameter(const MSVehicle* veh, const std::string& 
     if (key.compare(PAR_ACTIVE_CONTROLLER) == 0) {
         buf << (int)vars->activeController;
         return buf.str();
+    }
+    if (key == CC_PAR_PLOEG_H) {
+        return toString(vars->ploegH, 17);
     }
     if (key.compare(PAR_ACC_HEADWAY_TIME) == 0) {
         buf << (double)vars->accHeadwayTime;

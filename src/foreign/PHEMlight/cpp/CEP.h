@@ -133,7 +133,9 @@ namespace PHEMlightdll {
         //--------------------------------------------------------------------------------------------------
 
     public:
-        double CalcPower(double speed, double acc, double gradient);
+        // Negative overrides retain the dataset values. Overrides are per call:
+        // CEP instances and their emission curves remain shared and unchanged.
+        double CalcPower(double speed, double acc, double gradient, double airDragCoefficient = -1., double rollDragCoefficient = -1.);
 
         double CalcEngPower(double power);
 
@@ -142,7 +144,7 @@ namespace PHEMlightdll {
 
         double GetCO2Emission(double _FC, double _CO, double _HC, Helpers* VehicleClass);
 
-        double GetDecelCoast(double speed, double acc, double gradient);
+        double GetDecelCoast(double speed, double acc, double gradient, double airDragCoefficient = -1., double rollDragCoefficient = -1.);
 
         double GetRotationalCoeffecient(double speed);
 
@@ -153,7 +155,7 @@ namespace PHEMlightdll {
         double Interpolate(double px, double p1, double p2, double e1, double e2);
 
     public:
-        double GetMaxAccel(double speed, double gradient);
+        double GetMaxAccel(double speed, double gradient, double airDragCoefficient = -1., double rollDragCoefficient = -1.);
 
     private:
         double GetPMaxNorm(double speed);
